@@ -386,17 +386,23 @@ def lower_bound(L1, pos, op1, trace=0):
 
     return lo
 
-def SearchL1(L1, pos, op1, trace=0):
+def SearchL1(L1, pos, op1, off1, trace=0):
     # Perform an exponential search in the appropriate direction
     step = 1
     n = len(L1)
 
     hi = lo = pos
+    # Can we reuse the previous value?
+    if off1 < n:
+        if op1(L1[pos], L1[off1]):
+            hi = off1
+        else:
+            lo = off1
+
     if op1 in (operator.ge, operator.le,):
         # Scan left for loose inequality
-        if pos:
-            lo -= min(step, lo)
-            step *= 2
+        lo -= min(step, lo)
+        step *= 2
         while lo > 0 and op1(L1[pos], L1[lo]):
             hi = lo
             lo -= min(step, lo)
@@ -481,6 +487,7 @@ def IEJoinUnion(T, Tr, preds, trace=0):
     join_result = []
 
     # 11. for(i←1 to n) do
+    off1 = 0
     off2 = 0
     for i in range(n):
         # 12. pos ← P[i]
@@ -506,14 +513,15 @@ def IEJoinUnion(T, Tr, preds, trace=0):
         # Find the leftmost off1 where L1[pos] op1 L1[off1..n]
         # These are the rows that satisfy the op1 condition
         # and that is where we should start scanning B from
-        off1 = SearchL1(L1, pos, op1, trace)
+        off1 = SearchL1(L1, pos, op1, off1, trace)
         if off1 >= n: continue
         if trace: print("op1:", pos, off1, L1[pos], L1[off1], op1(L1[pos], L1[off1]), file=sys.stderr)
 
         # 13. for (j ← pos+eqOff to n) do
+        j = off1
         while True:
             # 14. if B[j] = 1 then
-            j = B.find(one_bit, off1)
+            j = B.find(one_bit, j)
             if j < 0: break
 
             rid_= Li[j]
@@ -522,7 +530,7 @@ def IEJoinUnion(T, Tr, preds, trace=0):
             if trace: print("rid:", j, rid, rid_, file=sys.stderr)
             join_result.append((T[rid-1], Tr[-rid_-1],))
 
-            off1 = j + 1
+            j = j + 1
 
     # 17. return join result
     return join_result
