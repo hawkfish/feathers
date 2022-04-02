@@ -392,14 +392,19 @@ def SearchL1(L1, pos, op1, trace=0):
     n = len(L1)
 
     hi = lo = pos
-    if op1(L1[pos], L1[pos]):
-        # Scan left for non-strict inequality
+    if op1 in (operator.ge, operator.le,):
+        # Scan left for loose inequality
+        if pos:
+            lo -= min(step, lo)
+            step *= 2
         while lo > 0 and op1(L1[pos], L1[lo]):
             hi = lo
             lo -= min(step, lo)
             step *= 2
     else:
         # Scan right for strict inequality
+        hi += min(step, n - hi)
+        step *= 2
         while hi < n and not op1(L1[pos], L1[hi]):
             lo = hi
             hi += min(step, n - hi)
