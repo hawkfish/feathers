@@ -1,7 +1,8 @@
+import functools
 import re
 import unittest
 
-pg_code = {
+pg_codes = {
     'HH': 'HH',         # hour of day (01–12)
     'HH12': 'HH12',     # hour of day (01–12)
     'HH24': 'HH24',     # hour of day (00–23)
@@ -90,15 +91,13 @@ pg_suffixes = {
     'SP': 'SP',         # spell mode (not implemented) - DDSP
 }
 
-pg_seps = re.compile(r'[ A-Za-z\d]+')
+pg_seps = re.compile(r'[^A-Za-z0-9]+')
 
 def starts_with_prefix(s, d, begin = 0):
     matches = [d[prefix] for prefix in d.keys() if s.startswith(prefix, begin)]
-    if matches:
-        return matches[0]
-    return ''
+    return functools.reduce(lambda acc, val: val if len(val) > len(acc) else acc, matches, '')
 
-def pg_parse(fmt):
+def pg_decode(fmt):
     templates = []
 
     pos = 0
@@ -123,7 +122,7 @@ def pg_parse(fmt):
         # Format code
         code = starts_with_prefix(fmt, pg_codes, pos)
         if not code:
-            raise f"Unknown format code at position {pos}"
+            raise Exception(f"Unknown format code at position {pos}")
         template['code'] = code
         pos += len(code)
 
@@ -136,7 +135,7 @@ def pg_parse(fmt):
 
     return {'globals': g, 'templates': templates}
 
-def pg_format(parsed):
+def pg_encode(parsed):
     parts = []
     parts.append(parsed['globals'])
     for template in parsed['templates']:
@@ -145,12 +144,48 @@ def pg_format(parsed):
         parts.append(template['suffix'])
     return ''.join(parts)
 
-class TestPGTimes(unittest.TestCase):
+c_codes = {
+    '%a': 'a',      # Abbreviated weekday name. - Sun, Mon, …
+    '%A': 'A',      # Full weekday name. - Sunday, Monday, …
+    '%w': 'w',      # Weekday as a decimal number. - 0, 1, …, 6
+    '%d': 'd',      # Day of the month as a zero-padded decimal. - 01, 02, …, 31
+    '%-d': '-d',    # Day of the month as a decimal number. - 1, 2, …, 30
+    '%b': 'b',      # Abbreviated month name. - Jan, Feb, …, Dec
+    '%B': 'B',      # Full month name. - January, February, …
+    '%m': 'm',      # Month as a zero-padded decimal number. - 01, 02, …, 12
+    '%-m': '-m',    # Month as a decimal number. - 1, 2, …, 12
+    '%y': 'y',      # Year without century as a zero-padded decimal number. - 00, 01, …, 99
+    '%-y': '-y',    # Year without century as a decimal number. - 0, 1, …, 99
+    '%Y': 'Y',      # Year with century as a decimal number. - 2013, 2019 etc.
+    '%H': 'H',      # Hour (24-hour clock) as a zero-padded decimal number. - 00, 01, …, 23
+    '%-H': '-H',    # Hour (24-hour clock) as a decimal number. - 0, 1, …, 23
+    '%I': 'I',      # Hour (12-hour clock) as a zero-padded decimal number. - 01, 02, …, 12
+    '%-I': '-I',    # Hour (12-hour clock) as a decimal number. - 1, 2, … 12
+    '%p': 'p',      # Locale’s AM or PM. - AM, PM
+    '%M': 'M',      # Minute as a zero-padded decimal number. - 00, 01, …, 59
+    '%-M': '-M',    # Minute as a decimal number. - 0, 1, …, 59
+    '%S': 'S',      # Second as a zero-padded decimal number. - 00, 01, …, 59
+    '%-S': '-S',    # Second as a decimal number. - 0, 1, …, 59
+    '%g': 'g',      # Millisecond as a decimal number, zero-padded on the left. - 000 - 999
+    '%f': 'f',      # Microsecond as a decimal number, zero-padded on the left. - 000000 - 999999
+    '%z': 'z',      # UTC offset in the form +HHMM or -HHMM. -
+    '%Z': 'Z',      # Time zone name. -
+    '%j': 'j',      # Day of the year as a zero-padded decimal number. - 001, 002, …, 366
+    '%-j': '-j',    # Day of the year as a decimal number. - 1, 2, …, 366
+    '%U': 'U',      # Week number of the year (Sunday as the first day of the week). - 00, 01, …, 53
+    '%W': 'W',      # Week number of the year (Monday as the first day of the week). - 00, 01, …, 53
+    '%c': 'c',      # ISO date and time representation - 1992-03-02 10:30:20
+    '%x': 'x',      # ISO date representation - 1992-03-02
+    '%X': 'X',      # ISO time representation - 10:30:20
+    '%%': '%',      # A literal ‘%’ character. - %
+}
+
+class TestPGFormats(unittest.TestCase):
 
     def assertRoundTrip(self, setup, expected = None):
         if not expected: expected = setup
 
-        actual = pg_format(pg_parse(setup))
+        actual = pg_encode(pg_decode(setup))
         self.assertEqual(expected, actual)
 
     def test_documentation(self):
@@ -162,6 +197,58 @@ class TestPGTimes(unittest.TestCase):
         self.assertRoundTrip('TMMonth')
         self.assertRoundTrip('TMMonth')
         self.assertRoundTrip('DDSP')
+
+    def assertDecode(self, setup, expected):
+        decoded = pg_decode(setup)
+        self.assertEqual(1, len(decoded['templates']))
+        actual = decoded['templates'][0]
+        self.assertEqual(expected, actual)
+
+    def test_priority(self):
+        self.assertDecode('D', {'prefix': '', 'code': 'D', 'suffix': ''})
+        self.assertDecode('DD', {'prefix': '', 'code': 'DD', 'suffix': ''})
+        self.assertDecode('DDD', {'prefix': '', 'code': 'DDD', 'suffix': ''})
+        self.assertDecode('Day', {'prefix': '', 'code': 'Day', 'suffix': ''})
+        self.assertDecode('DAY', {'prefix': '', 'code': 'DAY', 'suffix': ''})
+        self.assertDecode('DY', {'prefix': '', 'code': 'DY', 'suffix': ''})
+        self.assertDecode('Dy', {'prefix': '', 'code': 'Dy', 'suffix': ''})
+
+        self.assertDecode('HH', {'prefix': '', 'code': 'HH', 'suffix': ''})
+        self.assertDecode('HH12', {'prefix': '', 'code': 'HH12', 'suffix': ''})
+        self.assertDecode('HH24', {'prefix': '', 'code': 'HH24', 'suffix': ''})
+
+        self.assertDecode('SSSS', {'prefix': '', 'code': 'SSSS', 'suffix': ''})
+        self.assertDecode('SSSSS', {'prefix': '', 'code': 'SSSSS', 'suffix': ''})
+
+        self.assertDecode('Y', {'prefix': '', 'code': 'Y', 'suffix': ''})
+        self.assertDecode('YY', {'prefix': '', 'code': 'YY', 'suffix': ''})
+        self.assertDecode('YYY', {'prefix': '', 'code': 'YYY', 'suffix': ''})
+        self.assertDecode('YYYY', {'prefix': '', 'code': 'YYYY', 'suffix': ''})
+        self.assertDecode('Y,YYY', {'prefix': '', 'code': 'Y,YYY', 'suffix': ''})
+
+        self.assertDecode('IDDD', {'prefix': '', 'code': 'IDDD', 'suffix': ''})
+        self.assertDecode('ID', {'prefix': '', 'code': 'ID', 'suffix': ''})
+        self.assertDecode('IW', {'prefix': '', 'code': 'IW', 'suffix': ''})
+        self.assertDecode('IYYY', {'prefix': '', 'code': 'IYYY', 'suffix': ''})
+        self.assertDecode('IYY', {'prefix': '', 'code': 'IYY', 'suffix': ''})
+        self.assertDecode('IY', {'prefix': '', 'code': 'IY', 'suffix': ''})
+        self.assertDecode('I', {'prefix': '', 'code': 'I', 'suffix': ''})
+
+        self.assertDecode('MONTH', {'prefix': '', 'code': 'MONTH', 'suffix': ''})
+        self.assertDecode('MON', {'prefix': '', 'code': 'MON', 'suffix': ''})
+
+        self.assertDecode('Month', {'prefix': '', 'code': 'Month', 'suffix': ''})
+        self.assertDecode('Mon', {'prefix': '', 'code': 'Mon', 'suffix': ''})
+
+        self.assertDecode('month', {'prefix': '', 'code': 'month', 'suffix': ''})
+        self.assertDecode('mon', {'prefix': '', 'code': 'mon', 'suffix': ''})
+
+        self.assertDecode('W', {'prefix': '', 'code': 'W', 'suffix': ''})
+        self.assertDecode('WW', {'prefix': '', 'code': 'WW', 'suffix': ''})
+
+        self.assertDecode('TZ', {'prefix': '', 'code': 'TZ', 'suffix': ''})
+        self.assertDecode('TZH', {'prefix': '', 'code': 'TZH', 'suffix': ''})
+        self.assertDecode('TZM', {'prefix': '', 'code': 'TZM', 'suffix': ''})
 
 if __name__ == '__main__':
     unittest.main()
