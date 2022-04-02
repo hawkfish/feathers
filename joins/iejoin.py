@@ -392,14 +392,11 @@ def SearchL1(L1, pos, op1, off1, trace=0):
     n = len(L1)
 
     hi = lo = pos
-    # Can we reuse the previous value?
-    if off1 < n:
-        if op1(L1[pos], L1[off1]):
-            hi = off1
-        else:
-            lo = off1
-
     if op1 in (operator.ge, operator.le,):
+        # Can we reuse the previous value?
+        if off1 < n and op1(L1[pos], L1[off1]):
+            hi = lo = off1
+
         # Scan left for loose inequality
         lo -= min(step, lo)
         step *= 2
@@ -408,6 +405,10 @@ def SearchL1(L1, pos, op1, off1, trace=0):
             lo -= min(step, lo)
             step *= 2
     else:
+        # Can we reuse the previous value?
+        if off1 < n and not op1(L1[pos], L1[off1]):
+            hi = lo = off1
+
         # Scan right for strict inequality
         hi += min(step, n - hi)
         step *= 2
